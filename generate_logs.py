@@ -9,9 +9,6 @@ START=datetime(2026,11,18,9,0,tzinfo=timezone.utc)
 N=12000
 
 
-
-
-
 # Fixed seed and overlapping incident windows make the teaching dataset reproducible.
 services=['api-gateway','auth-service','catalog-service','cart-service','inventory-service','order-service','payment-service','notification-worker']
 hosts={s:[f'{s[:8]}-{i:02d}' for i in range(1,4)] for s in services}
