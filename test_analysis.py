@@ -8,14 +8,19 @@ from analysis import BASE_DIR, analyze, five_minute_bucket, percentile, render_r
 
 
 class AnalysisTests(unittest.TestCase):
+    """Check request-level accounting, report caveats, and generated artifacts."""
+
+    # Load the shared dataset once before running the test methods.
     @classmethod
     def setUpClass(cls):
         cls.data = analyze(BASE_DIR)
 
+    # Check that percentile calculation handles empty and unordered input.
     def test_percentile_handles_empty_and_sorted_values(self):
         self.assertIsNone(percentile([], 0.5))
         self.assertEqual(percentile([9, 1, 5], 0.5), 5)
 
+    # Check that time bucketing keeps the UTC timezone and rounds down correctly.
     def test_five_minute_bucket_preserves_timezone(self):
         timestamp = datetime(2026, 11, 18, 11, 48, 37, tzinfo=timezone.utc)
         self.assertEqual(
@@ -23,6 +28,7 @@ class AnalysisTests(unittest.TestCase):
             datetime(2026, 11, 18, 11, 45, tzinfo=timezone.utc),
         )
 
+    # Check request totals, 5xx totals, and trace uniqueness in the source data.
     def test_request_level_counts_match_dataset(self):
         self.assertEqual(len(self.data["requests"]), 12000)
         self.assertEqual(self.data["status_counts"][200], 10265)
@@ -33,6 +39,7 @@ class AnalysisTests(unittest.TestCase):
         trace_ids = [row["trace_id"] for row in self.data["requests"]]
         self.assertEqual(len(trace_ids), len(set(trace_ids)))
 
+    # Check that the summary explains log-event counting and analysis limitations.
     def test_report_distinguishes_requests_from_log_events(self):
         report = render_report(self.data)
         self.assertIn("5xx requests: 1,147 (9.56%)", report)
@@ -42,6 +49,7 @@ class AnalysisTests(unittest.TestCase):
         self.assertIn("Timestamp UTC", report)
         self.assertIn("1 distinct `span_id` value(s)", report)
 
+    # Check that generated reports preserve totals and include expected trace samples.
     def test_generated_artifacts_keep_request_counts_and_real_trace_ids(self):
         with TemporaryDirectory() as directory:
             write_artifacts(self.data, directory)

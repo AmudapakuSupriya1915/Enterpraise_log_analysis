@@ -9,15 +9,18 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 
+# Read a CSV file and return its rows as dictionaries.
 def load_csv(path):
     with path.open(newline="", encoding="utf-8") as source:
         return list(csv.DictReader(source))
 
 
+# Convert an ISO timestamp, including a trailing Z, into a datetime.
 def parse_timestamp(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+# Sort the values and return the item nearest the requested percentile.
 def percentile(values, proportion):
     ordered = sorted(values)
     if not ordered:
@@ -25,10 +28,12 @@ def percentile(values, proportion):
     return ordered[round((len(ordered) - 1) * proportion)]
 
 
+# Round a timestamp down to the start of its five-minute interval.
 def five_minute_bucket(timestamp):
     return timestamp.replace(minute=(timestamp.minute // 5) * 5, second=0, microsecond=0)
 
 
+# Load the input files and group request, log, and metric data for analysis.
 def analyze(data_dir=BASE_DIR):
     requests = load_csv(data_dir / "requests.csv")
     logs = load_csv(data_dir / "application_logs.csv")
@@ -51,6 +56,7 @@ def analyze(data_dir=BASE_DIR):
         regional_requests[row["region"]]["total"] += 1
         regional_requests[row["region"]]["5xx"] += row["status"] >= 500
 
+    # Log events can repeat a request across services; request totals come from requests.csv.
     log_errors = Counter(
         (row["service"], row["error_code"], row["http_status"])
         for row in logs if row["error_code"]
@@ -99,6 +105,7 @@ def analyze(data_dir=BASE_DIR):
     }
 
 
+# Turn the analysis results into a readable Markdown incident summary.
 def render_report(data):
     requests = data["requests"]
     total = len(requests)
@@ -261,6 +268,7 @@ def render_report(data):
     return "\n".join(lines)
 
 
+# Save detailed report files and charts in the requested output directory.
 def write_artifacts(data, output_dir):
     import matplotlib
 
@@ -274,12 +282,14 @@ def write_artifacts(data, output_dir):
     reports_dir.mkdir(parents=True, exist_ok=True)
     charts_dir.mkdir(parents=True, exist_ok=True)
 
+    # Write a list of dictionaries to a CSV file with the given column names.
     def write_csv(path, fields, rows):
         with path.open("w", newline="", encoding="utf-8") as destination:
             writer = csv.DictWriter(destination, fieldnames=fields)
             writer.writeheader()
             writer.writerows(rows)
 
+    # Measure how closely two lists of numbers change together.
     def pearson(left, right):
         if len(left) < 2 or len(left) != len(right):
             return None
@@ -620,6 +630,7 @@ def write_artifacts(data, output_dir):
     (reports_dir / "INCIDENT_RCA.md").write_text("\n".join(rca), encoding="utf-8")
 
 
+# Read command-line options and run the analysis and report generation.
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=BASE_DIR)

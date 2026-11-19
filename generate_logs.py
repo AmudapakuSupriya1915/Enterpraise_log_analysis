@@ -7,18 +7,29 @@ R=random.Random(20261119)
 OUT=Path(__file__).resolve().parent
 START=datetime(2026,11,18,9,0,tzinfo=timezone.utc)
 N=12000
+
+
+
+
+
+# Fixed seed and overlapping incident windows make the teaching dataset reproducible.
 services=['api-gateway','auth-service','catalog-service','cart-service','inventory-service','order-service','payment-service','notification-worker']
 hosts={s:[f'{s[:8]}-{i:02d}' for i in range(1,4)] for s in services}
 ids=collections.Counter()
 logs=[]; reqs=[]; metrics=[]
+# Check whether a time offset falls inside an incident window.
 def between(t,a,b): return a<=t<b
+
+# Convert a timestamp to minutes since the dataset begins.
 def mins(t):return (t-START).total_seconds()/60
 
+# Add one service event to the generated application logs.
 def emit(t,trace,span,parent,service,level,event,msg,latency,status,user,tenant,region,endpoint,method,error='',deploy='v2.7.3',extra=None):
     ids[service]+=1
     logs.append(dict(timestamp=t.isoformat(timespec='milliseconds').replace('+00:00','Z'),level=level,service=service,environment='production',region=region,host=R.choice(hosts[service]),deployment_version=deploy,trace_id=trace,span_id=span,parent_span_id=parent,request_id=trace[:16],tenant_id=tenant,user_id=user,method=method,endpoint=endpoint,event=event,message=msg,http_status=status,latency_ms=latency,error_code=error,details=json.dumps(extra or {},sort_keys=True,separators=(',',':'))))
 
 routes=[('/api/v1/products','GET',.29),('/api/v1/login','POST',.17),('/api/v1/cart','POST',.14),('/api/v1/checkout','POST',.26),('/api/v1/orders','GET',.14)]
+# Choose an endpoint and method using the configured traffic weights.
 def choose_route():
     k=R.random();total=0
     for p,m,w in routes:
@@ -67,12 +78,17 @@ for i in range(N):
         total+=lat
         if code>=400 and overall==200:
             overall=code;end_code=error
+
+
             # fail fast; notification-worker should not execute after checkout failure
             break
     if endpoint=='/api/v1/checkout' and overall==200 and between(minute,105,175) and R.random()<.18:
+
+
         # Successful checkout but message queue delayed (post-commit async issue)
         emit(t+timedelta(milliseconds=total+R.randint(5000,35000)),trace,uuid.UUID(int=R.getrandbits(64)).hex[:16],spans[-1],'notification-worker','WARN','queue.consumer.lag','Order email delayed due to queue backlog',R.randint(5000,35000),200,user,tenant,region,endpoint,method,'QUEUE_CONSUMER_LAG',version,{'queue':'order-events','lag_messages':R.randint(1200,6500),'consumer_group':'mailer-v2'})
     if endpoint=='/api/v1/login' and attack:
+
         # Extra auth audit line; an auth failure is often client-visible 401 rather than a server error
         emit(t+timedelta(milliseconds=total+2),trace,uuid.UUID(int=R.getrandbits(64)).hex[:16],gateway,'auth-service','WARN','security.brute_force_indicator','Repeated login failures from single source IP',0,401,user,tenant,region,endpoint,method,'SUSPICIOUS_LOGIN',version,{'ip':'198.51.100.77','risk_score':R.randint(80,99)})
     emit(t+timedelta(milliseconds=total+4),trace,gateway,'','api-gateway','ERROR' if overall>=500 else ('WARN' if overall>=400 else 'INFO'),'http.response','Completed incoming HTTP request',total,overall,user,tenant,region,endpoint,method,end_code,version,{'client_ip':'198.51.100.77' if attack else ip,'bytes_sent':R.randint(100,4800),'user_agent':'python-requests/2.32' if attack else 'ShopSphere-Web/6.1'})
